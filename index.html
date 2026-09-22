@@ -139,7 +139,9 @@
 
 <dialog id="settings">
   <h3>Settings</h3>
-  <p>The token is stored only on this phone and is never committed anywhere.</p>
+  <p>Stored only on this phone, never committed anywhere. On iPhone, enter it
+     in the <b>home-screen app</b> — a Safari tab keeps separate storage and
+     will ask again.</p>
   <label for="f-token">GitHub token (fine-grained, Contents: read &amp; write)</label>
   <input id="f-token" type="password" autocomplete="off" placeholder="github_pat_…">
   <label for="f-repo">Repository</label>
@@ -518,8 +520,43 @@ document.addEventListener("visibilitychange", () => {
 if ("serviceWorker" in navigator)
   navigator.serviceWorker.register("sw.js").catch(() => {});
 
+// iOS gives a home-screen web app its own storage, separate from Safari's.
+// Enter the token in the Safari tab and the installed app starts empty — and
+// the other way round — which looks exactly like "it forgot my token".
+// Safari's tab storage is also cleared after about a week of not opening it,
+// so the installed app is the only place the token reliably survives.
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+               (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const INSTALLED = window.navigator.standalone === true ||
+                  window.matchMedia("(display-mode: standalone)").matches;
+
+function storageWorks() {
+  try {
+    localStorage.setItem("__probe", "1");
+    localStorage.removeItem("__probe");
+    return true;
+  } catch { return false; }
+}
+
+function environmentWarning() {
+  if (!storageWorks())
+    return ["This browser is blocking storage — the token cannot be saved. " +
+            "Private Browsing does this; open the app in a normal window.", "err"];
+  if (IS_IOS && !INSTALLED)
+    return ["⚠️ You're in a Safari tab. Tap Share → Add to Home Screen and " +
+            "open it from there BEFORE entering your token — the installed " +
+            "app has its own storage, and a tab's is cleared after a week.",
+            "warn"];
+  return null;
+}
+
 render();
-if (!cfg.token || !cfg.repo) {
+const warning = environmentWarning();
+if (warning) {
+  setStatus(warning[0], warning[1]);
+  // Don't push them into a settings dialog they'd only have to fill in twice.
+  if (warning[1] !== "err" && (cfg.token || cfg.repo)) flush();
+} else if (!cfg.token || !cfg.repo) {
   setStatus("Not connected yet — open settings to add a token.", "warn");
   openSettings();
 } else {
