@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Tap">
+<meta name="theme-color" content="#0b0d10">
+<title>Tap</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+  :root {
+    --bg: #0b0d10;
+    --surface: #161a20;
+    --surface-hi: #1e242c;
+    --line: #2a313a;
+    --text: #e8ecf1;
+    --muted: #8e9aa8;
+    --accent: #5aa9e6;
+    --ok: #4ec9a5;
+    --warn: #e6b45a;
+    --err: #e66a5a;
+    --tap: 0.06s;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    overscroll-behavior-y: none;
+  }
+  body {
+    padding: env(safe-area-inset-top) env(safe-area-inset-right)
+             env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 12px 16px 32px; }
+
+  header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 12px; padding: 8px 0 14px;
+  }
+  h1 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .gear {
+    background: none; border: 0; color: var(--muted); font-size: 20px;
+    padding: 4px 6px; cursor: pointer;
+  }
+
+  #status {
+    font-size: 13px; padding: 8px 12px; border-radius: 10px; margin-bottom: 14px;
+    border: 1px solid var(--line); background: var(--surface); display: none;
+  }
+  #status.show { display: block; }
+  #status.ok   { border-color: #2c5e50; color: var(--ok); }
+  #status.warn { border-color: #5e5230; color: var(--warn); }
+  #status.err  { border-color: #5e3630; color: var(--err); }
+
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .tile {
+    appearance: none; border: 1px solid var(--line); background: var(--surface);
+    color: var(--text); border-radius: 16px; padding: 16px 6px 12px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 500; cursor: pointer; min-height: 92px;
+    justify-content: center; transition: transform var(--tap), background var(--tap);
+  }
+  .tile:active { transform: scale(0.95); background: var(--surface-hi); }
+  .tile .ico { font-size: 27px; line-height: 1; }
+  .tile .n {
+    position: absolute; transform: translate(34px, -30px);
+    background: var(--accent); color: #04121c; font-size: 11px; font-weight: 700;
+    min-width: 19px; height: 19px; border-radius: 10px; display: grid;
+    place-items: center; padding: 0 5px;
+  }
+
+  h2 {
+    font-size: 12px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.07em; color: var(--muted); margin: 26px 0 10px;
+  }
+  .log { list-style: none; margin: 0; padding: 0; }
+  .log li {
+    display: flex; align-items: center; gap: 10px; padding: 11px 12px;
+    border: 1px solid var(--line); border-radius: 12px; margin-bottom: 7px;
+    background: var(--surface); font-size: 14px;
+  }
+  .log .ico { font-size: 18px; }
+  .log .name { flex: 1; }
+  .log .time {
+    font-variant-numeric: tabular-nums; color: var(--accent);
+    background: none; border: 0; font: inherit; font-size: 14px;
+    padding: 4px 6px; cursor: pointer; border-bottom: 1px dashed var(--line);
+  }
+  .log .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  .log .dot.queued { background: var(--warn); }
+  .log .dot.error  { background: var(--err); }
+  .log .del {
+    background: none; border: 0; color: var(--muted); font-size: 17px;
+    padding: 4px 2px 4px 6px; cursor: pointer;
+  }
+  .empty { color: var(--muted); font-size: 14px; padding: 4px 2px; }
+
+  dialog {
+    border: 1px solid var(--line); background: var(--surface); color: var(--text);
+    border-radius: 16px; padding: 20px; width: min(92vw, 420px);
+  }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  dialog h3 { margin: 0 0 4px; font-size: 16px; }
+  dialog p { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 5px; }
+  input {
+    width: 100%; padding: 11px 12px; border-radius: 10px; font-size: 16px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  }
+  .row { display: flex; gap: 8px; margin-top: 18px; }
+  button.btn {
+    flex: 1; padding: 12px; border-radius: 10px; font-size: 15px; font-weight: 600;
+    border: 1px solid var(--line); background: var(--surface-hi); color: var(--text);
+    cursor: pointer;
+  }
+  button.btn.primary { background: var(--accent); color: #04121c; border-color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Tap</h1>
+      <div class="sub" id="daylabel"></div>
+    </div>
+    <button class="gear" id="open-settings" aria-label="Settings">⚙</button>
+  </header>
+
+  <div id="status"></div>
+  <div class="grid" id="grid"></div>
+
+  <h2 id="loghead">Today</h2>
+  <ul class="log" id="log"></ul>
+</div>
+
+<dialog id="settings">
+  <h3>Settings</h3>
+  <p>The token is stored only on this phone and is never committed anywhere.</p>
+  <label for="f-token">GitHub token (fine-grained, Contents: read &amp; write)</label>
+  <input id="f-token" type="password" autocomplete="off" placeholder="github_pat_…">
+  <label for="f-repo">Repository</label>
+  <input id="f-repo" type="text" autocomplete="off" placeholder="owner/repo">
+  <label for="f-branch">Branch</label>
+  <input id="f-branch" type="text" autocomplete="off" placeholder="main">
+  <div class="row">
+    <button class="btn" id="test">Test</button>
+    <button class="btn primary" id="save">Save</button>
+  </div>
+  <div class="row"><button class="btn" id="close">Close</button></div>
+</dialog>
+
+<script>
+// ── What a tap means ────────────────────────────────────────────────────────
+// `kind` is the contract with events_store.py. Changing a value here without
+// changing EVENT_KINDS there makes the event unreadable and it gets skipped.
+const KINDS = [
+  { kind: "coffee",      icon: "☕",  label: "Coffee" },
+  { kind: "meal",        icon: "🍽",  label: "Meal" },
+  { kind: "melatonin",   icon: "🌙",  label: "Melatonin" },
+  { kind: "drink_soft",  icon: "🍺",  label: "Beer/Wine" },
+  { kind: "drink_hard",  icon: "🥃",  label: "Hard" },
+  { kind: "drink_mixer", icon: "🍹",  label: "Mixer" },
+  { kind: "work_end",    icon: "💻",  label: "Work end" },
+  { kind: "social",      icon: "🥂",  label: "Social",  meta: { grade: "social" } },
+  { kind: "social",      icon: "🎉",  label: "Party",   meta: { grade: "party" },
+    id: "party" },
+  { kind: "sex",         icon: "❤️",  label: "Sex" },
+];
+const BY_ID = Object.fromEntries(KINDS.map(k => [k.id || k.kind, k]));
+
+// Events before this hour belong to the previous evening — the same rule
+// events_store.DAY_CUTOFF_HOUR applies on the other side. Only used for what
+// this screen calls "today"; the server decides the real attribution.
+const DAY_CUTOFF_HOUR = 5;
+
+const CFG_KEY = "whooptap.cfg";
+const EV_KEY  = "whooptap.events";
+
+// ── Storage. Every access is guarded: Safari throws in private mode and can
+// evict a home-screen app's storage, and neither must break the buttons.
+const store = {
+  get(key, fallback) {
+    try { return JSON.parse(localStorage.getItem(key)) ?? fallback; }
+    catch { return fallback; }
+  },
+  set(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); return true; }
+    catch { return false; }
+  },
+};
+
+let cfg = store.get(CFG_KEY, { token: "", repo: "", branch: "main" });
+let events = store.get(EV_KEY, []);
+
+// ── Time helpers ────────────────────────────────────────────────────────────
+
+function isoLocal(d) {
+  // 2026-09-21T08:14:32+02:00 — local wall time with its offset, so the file
+  // is readable and the Python side never has to guess a zone.
+  const p = n => String(n).padStart(2, "0");
+  const off = -d.getTimezoneOffset();
+  const sign = off >= 0 ? "+" : "-";
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` +
+         `T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}` +
+         `${sign}${p(Math.floor(Math.abs(off) / 60))}:${p(Math.abs(off) % 60)}`;
+}
+
+function activityDay(d) {
+  const x = new Date(d);
+  if (x.getHours() < DAY_CUTOFF_HOUR) x.setDate(x.getDate() - 1);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}` +
+         `-${String(x.getDate()).padStart(2, "0")}`;
+}
+
+function hhmm(iso) {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function newId() {
+  if (crypto.randomUUID) return crypto.randomUUID().slice(0, 8);
+  return Math.random().toString(16).slice(2, 10);
+}
+
+function pathFor(ev) {
+  const d = new Date(ev.at), p = n => String(n).padStart(2, "0");
+  const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}` +
+                `-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+  return `events/${stamp}-${ev.kind}-${ev.id}.json`;
+}
+
+// ── GitHub Contents API ─────────────────────────────────────────────────────
+// One file per event, never an append: two taps a second apart would collide
+// on a shared file's SHA, and a retry would silently drop one.
+
+function b64(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = "";
+  bytes.forEach(b => { bin += String.fromCharCode(b); });
+  return btoa(bin);
+}
+
+async function gh(path, method, body) {
+  if (!cfg.token || !cfg.repo) throw new Error("Not configured — open settings");
+  const res = await fetch(`https://api.github.com/repos/${cfg.repo}/contents/${path}`, {
+    method,
+    headers: {
+      "Authorization": `Bearer ${cfg.token}`,
+      "Accept": "application/vnd.github+json",
+      "Content-Type": "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`GitHub ${res.status}: ${detail.slice(0, 140)}`);
+  }
+  return res.json();
+}
+
+async function push(ev) {
+  const payload = { kind: ev.kind, at: ev.at, id: ev.id };
+  if (ev.meta && Object.keys(ev.meta).length) payload.meta = ev.meta;
+  const out = await gh(ev.path, "PUT", {
+    message: `tap: ${ev.kind} ${hhmm(ev.at)}`,
+    content: b64(JSON.stringify(payload, null, 2) + "\n"),
+    branch: cfg.branch || "main",
+  });
+  ev.sha = out.content.sha;
+  ev.state = "synced";
+}
+
+async function remove(ev) {
+  if (ev.state === "synced" && ev.sha) {
+    await gh(ev.path, "DELETE", {
+      message: `undo: ${ev.kind} ${hhmm(ev.at)}`,
+      sha: ev.sha,
+      branch: cfg.branch || "main",
+    });
+  }
+}
+
+// ── Queue. A tap is recorded locally first and pushed after, so the time is
+// the moment it happened rather than the moment the network came back.
+
+let flushing = false;
+let flushAgain = false;
+
+async function flush() {
+  // A tap during an in-flight flush must not be dropped: it would sit queued
+  // until the app happened to be reopened, and the morning fold would be
+  // missing it with nothing to show that anything was lost.
+  if (flushing) { flushAgain = true; return; }
+  flushing = true;
+  let failed = 0;
+  try {
+    do {
+      flushAgain = false;
+      for (const ev of events.filter(e => e.state !== "synced")) {
+        try {
+          await push(ev);
+          delete ev.error;
+        } catch (err) {
+          ev.state = navigator.onLine ? "error" : "queued";
+          ev.error = String(err.message || err);
+          failed++;
+        }
+      }
+    } while (flushAgain && !failed);   // stop looping once something is broken
+  } finally {
+    flushing = false;
+    save();
+    render();
+    report(failed);
+  }
+}
+
+function report(failed) {
+  const pending = events.filter(e => e.state !== "synced").length;
+  const s = pending > 1 ? "s" : "";
+  if (!pending)                 return setStatus("");
+  if (!cfg.token || !cfg.repo)  return setStatus(
+    `Not connected yet — ${pending} tap${s} waiting. Open settings to add a token.`, "warn");
+  if (!navigator.onLine)        return setStatus(
+    `Offline — ${pending} tap${s} waiting. They keep their real time.`, "warn");
+  if (!failed) return;
+  const err = (events.find(e => e.error) || {}).error || "";
+  setStatus(
+    err.includes("401") || err.includes("403")
+      ? "GitHub rejected the token — check settings."
+      : `Could not sync ${pending} tap${s}. ${err}`,
+    "err");
+}
+
+function save() {
+  // Keep three days: enough to survive a missed run, small enough that an
+  // eviction cannot lose much. Anything synced is already safe in the repo.
+  const cutoff = new Date(Date.now() - 3 * 864e5).toISOString();
+  events = events.filter(e => e.at > cutoff || e.state !== "synced");
+  if (!store.set(EV_KEY, events))
+    setStatus("This phone is blocking storage — taps may not survive a reload", "warn");
+}
+
+// ── UI ──────────────────────────────────────────────────────────────────────
+
+const $ = id => document.getElementById(id);
+
+function setStatus(msg, cls) {
+  const el = $("status");
+  el.textContent = msg;
+  el.className = msg ? `show ${cls || ""}` : "";
+}
+
+function todaysEvents() {
+  const today = activityDay(new Date());
+  return events
+    .filter(e => activityDay(new Date(e.at)) === today)
+    .sort((a, b) => a.at.localeCompare(b.at));
+}
+
+function render() {
+  const mine = todaysEvents();
+  const counts = {};
+  mine.forEach(e => {
+    const id = e.meta && e.meta.grade === "party" ? "party" : e.kind;
+    counts[id] = (counts[id] || 0) + 1;
+  });
+
+  $("grid").innerHTML = KINDS.map(k => {
+    const id = k.id || k.kind, n = counts[id] || 0;
+    return `<button class="tile" data-id="${id}">
+      ${n ? `<span class="n">${n}</span>` : ""}
+      <span class="ico">${k.icon}</span><span>${k.label}</span></button>`;
+  }).join("");
+
+  $("daylabel").textContent = new Date().toLocaleDateString(undefined,
+    { weekday: "long", day: "numeric", month: "short" });
+  $("loghead").textContent = `Today — ${mine.length} tap${mine.length === 1 ? "" : "s"}`;
+
+  $("log").innerHTML = mine.length ? mine.map(e => {
+    const k = BY_ID[e.meta && e.meta.grade === "party" ? "party" : e.kind] || {};
+    return `<li data-id="${e.id}">
+      <span class="dot ${e.state === "synced" ? "" : e.state}"></span>
+      <span class="ico">${k.icon || "•"}</span>
+      <span class="name">${k.label || e.kind}</span>
+      <button class="time" data-act="time">${hhmm(e.at)}</button>
+      <button class="del" data-act="del" aria-label="Undo">✕</button>
+    </li>`;
+  }).join("") : `<li class="empty">Nothing tapped yet.</li>`;
+}
+
+function tap(id) {
+  const k = BY_ID[id];
+  if (!k) return;
+  const now = new Date();
+  const ev = {
+    id: newId(), kind: k.kind, at: isoLocal(now),
+    meta: k.meta || {}, state: "queued",
+  };
+  ev.path = pathFor(ev);
+  events.push(ev);
+  save();
+  render();
+  if (navigator.vibrate) navigator.vibrate(12);
+  flush();
+}
+
+async function undo(id) {
+  const ev = events.find(e => e.id === id);
+  if (!ev) return;
+  try {
+    await remove(ev);
+  } catch (err) {
+    setStatus(`Could not remove it from GitHub: ${err.message}`, "err");
+    return;
+  }
+  events = events.filter(e => e.id !== id);
+  save();
+  render();
+}
+
+async function retime(id) {
+  const ev = events.find(e => e.id === id);
+  if (!ev) return;
+  const input = prompt("What time did it actually happen? (HH:MM)", hhmm(ev.at));
+  if (!input) return;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(input.trim());
+  if (!m || +m[1] > 23 || +m[2] > 59) {
+    setStatus("That is not a time — use HH:MM", "err");
+    return;
+  }
+  const d = new Date(ev.at);
+  d.setHours(+m[1], +m[2], 0, 0);
+  // The filename carries the timestamp, so a correction is a new file plus a
+  // removal of the old one. Push first: if that fails, nothing is lost.
+  const moved = { ...ev, at: isoLocal(d) };
+  moved.path = pathFor(moved);
+  try {
+    if (ev.state === "synced") {
+      await push(moved);
+      await remove(ev);
+    }
+  } catch (err) {
+    setStatus(`Could not move it: ${err.message}`, "err");
+    return;
+  }
+  Object.assign(ev, moved);
+  save();
+  render();
+  if (ev.state !== "synced") flush();
+}
+
+// ── Settings ────────────────────────────────────────────────────────────────
+
+function openSettings() {
+  $("f-token").value  = cfg.token || "";
+  $("f-repo").value   = cfg.repo || "";
+  $("f-branch").value = cfg.branch || "main";
+  $("settings").showModal();
+}
+
+$("open-settings").onclick = openSettings;
+$("close").onclick = () => $("settings").close();
+
+$("save").onclick = () => {
+  cfg = {
+    token:  $("f-token").value.trim(),
+    repo:   $("f-repo").value.trim().replace(/^https?:\/\/github\.com\//, ""),
+    branch: $("f-branch").value.trim() || "main",
+  };
+  store.set(CFG_KEY, cfg);
+  $("settings").close();
+  setStatus("Saved.", "ok");
+  flush();
+};
+
+$("test").onclick = async () => {
+  const probe = { ...cfg, token: $("f-token").value.trim(),
+                  repo: $("f-repo").value.trim() };
+  const saved = cfg;
+  cfg = probe;
+  try {
+    await gh("events", "GET");
+    setStatus("Connected — events/ is reachable.", "ok");
+  } catch (err) {
+    setStatus(err.message.includes("404")
+      ? "Reached GitHub, but events/ is missing or the token cannot see it."
+      : err.message, "err");
+  } finally {
+    cfg = saved;
+  }
+};
+
+// ── Wiring ──────────────────────────────────────────────────────────────────
+
+$("grid").addEventListener("click", e => {
+  const tile = e.target.closest(".tile");
+  if (tile) tap(tile.dataset.id);
+});
+
+$("log").addEventListener("click", e => {
+  const btn = e.target.closest("[data-act]");
+  if (!btn) return;
+  const id = btn.closest("li").dataset.id;
+  if (btn.dataset.act === "del") undo(id);
+  else retime(id);
+});
+
+window.addEventListener("online", flush);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) { render(); flush(); }
+});
+
+if ("serviceWorker" in navigator)
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+
+render();
+if (!cfg.token || !cfg.repo) {
+  setStatus("Not connected yet — open settings to add a token.", "warn");
+  openSettings();
+} else {
+  flush();
+}
+</script>
+</body>
+</html>
