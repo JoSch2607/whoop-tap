@@ -181,6 +181,7 @@ const DAY_CUTOFF_HOUR = 5;
 
 const CFG_KEY = "whooptap.cfg";
 const EV_KEY  = "whooptap.events";
+const ORPHAN_KEY = "whooptap.orphans";
 
 // ── Storage. Every access is guarded: Safari throws in private mode and can
 // evict a home-screen app's storage, and neither must break the buttons.
@@ -197,6 +198,9 @@ const store = {
 
 let cfg = store.get(CFG_KEY, { token: "", repo: "", branch: "main" });
 let events = store.get(EV_KEY, []);
+// Old files a correction failed to delete. Retried on every flush; until one
+// succeeds the repo holds a duplicate, which the fold resolves by `rev`.
+let orphans = store.get(ORPHAN_KEY, []);
 
 // ── Time helpers ────────────────────────────────────────────────────────────
 
@@ -265,7 +269,10 @@ async function gh(path, method, body) {
 }
 
 async function push(ev) {
-  const payload = { kind: ev.kind, at: ev.at, id: ev.id };
+  // `rev` rises with every correction. Re-timing writes a new file and deletes
+  // the old one; when that delete fails, both survive with the same id, and
+  // the fold uses rev to tell the correction from what it corrected.
+  const payload = { kind: ev.kind, at: ev.at, id: ev.id, rev: ev.rev || 0 };
   if (ev.meta && Object.keys(ev.meta).length) payload.meta = ev.meta;
   const out = await gh(ev.path, "PUT", {
     message: `tap: ${ev.kind} ${hhmm(ev.at)}`,
@@ -302,6 +309,16 @@ async function flush() {
   try {
     do {
       flushAgain = false;
+      // Clear any file a correction failed to delete, before anything else.
+      for (const o of [...orphans]) {
+        try {
+          await gh(o.path, "DELETE", {
+            message: `undo: superseded ${o.kind} ${hhmm(o.at)}`,
+            sha: o.sha, branch: cfg.branch || "main",
+          });
+          orphans = orphans.filter(x => x.path !== o.path);
+        } catch { /* keep it queued; the fold copes via rev meanwhile */ }
+      }
       for (const ev of events.filter(e => e.state !== "synced")) {
         try {
           await push(ev);
@@ -343,6 +360,7 @@ function save() {
   // eviction cannot lose much. Anything synced is already safe in the repo.
   const cutoff = new Date(Date.now() - 3 * 864e5).toISOString();
   events = events.filter(e => e.at > cutoff || e.state !== "synced");
+  store.set(ORPHAN_KEY, orphans);
   if (!store.set(EV_KEY, events))
     setStatus("This phone is blocking storage — taps may not survive a reload", "warn");
 }
@@ -439,12 +457,20 @@ async function retime(id) {
   d.setHours(+m[1], +m[2], 0, 0);
   // The filename carries the timestamp, so a correction is a new file plus a
   // removal of the old one. Push first: if that fails, nothing is lost.
-  const moved = { ...ev, at: isoLocal(d) };
+  const moved = { ...ev, at: isoLocal(d), rev: (ev.rev || 0) + 1 };
   moved.path = pathFor(moved);
+  const orphan = { path: ev.path, sha: ev.sha, kind: ev.kind, at: ev.at };
   try {
     if (ev.state === "synced") {
       await push(moved);
-      await remove(ev);
+      // Push first: if this half fails nothing is lost, only duplicated. The
+      // old file is then queued for removal and retried on every flush, rather
+      // than left behind as a phantom second meal.
+      try {
+        await remove(ev);
+      } catch {
+        orphans.push(orphan);
+      }
     }
   } catch (err) {
     setStatus(`Could not move it: ${err.message}`, "err");
@@ -453,7 +479,7 @@ async function retime(id) {
   Object.assign(ev, moved);
   save();
   render();
-  if (ev.state !== "synced") flush();
+  flush();
 }
 
 // ── Settings ────────────────────────────────────────────────────────────────
