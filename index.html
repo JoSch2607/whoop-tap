@@ -56,7 +56,13 @@
   #status.warn { border-color: #5e5230; color: var(--warn); }
   #status.err  { border-color: #5e3630; color: var(--err); }
 
-  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .grid { display: block; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  h2.group {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--muted); margin: 18px 0 8px;
+  }
+  h2.group:first-child { margin-top: 2px; }
   .tile {
     appearance: none; border: 1px solid var(--line); background: var(--surface);
     color: var(--text); border-radius: 16px; padding: 16px 6px 12px;
@@ -159,23 +165,34 @@
 // ── What a tap means ────────────────────────────────────────────────────────
 // `kind` is the contract with events_store.py. Changing a value here without
 // changing EVENT_KINDS there makes the event unreadable and it gets skipped.
-const KINDS = [
-  { kind: "coffee",      icon: "☕",  label: "Coffee" },
-  { kind: "meal",        icon: "🍽",  label: "Meal" },
-  { kind: "melatonin",   icon: "🌙",  label: "Melatonin" },
-  { kind: "drink_soft",  icon: "🍺",  label: "Beer/Wine" },
-  { kind: "drink_hard",  icon: "🥃",  label: "Hard" },
-  { kind: "drink_mixer", icon: "🍹",  label: "Mixer" },
-  { kind: "work_end",    icon: "💻",  label: "Work end" },
-  { kind: "social",      icon: "🥂",  label: "Social",  meta: { grade: "social" } },
-  { kind: "social",      icon: "🎉",  label: "Party",   meta: { grade: "party" },
-    id: "party" },
-  { kind: "sex",         icon: "❤️",  label: "Sex" },
-  { kind: "leave_house", icon: "🚪",  label: "Left house" },
-  { kind: "cough",       icon: "🤧",  label: "Cough" },
-  { kind: "workout_end", icon: "🏋️",  label: "Workout end" },
-  { kind: "snack",       icon: "🍫",  label: "Snack" },
+// Grouped for the screen. `kind` is still the contract with
+// events_store.EVENT_KINDS — the groups are presentation only and the server
+// neither sees nor cares about them.
+const GROUPS = [
+  { title: "Food & Drink", kinds: [
+    { kind: "food_large",  icon: "🍽",  label: "Large" },
+    { kind: "food_medium", icon: "🥪",  label: "Medium" },
+    { kind: "food_small",  icon: "🍎",  label: "Small" },
+    { kind: "coffee",      icon: "☕",  label: "Coffee" },
+    { kind: "drink_soft",  icon: "🍺",  label: "Beer/Wine" },
+    { kind: "drink_hard",  icon: "🥃",  label: "Hard" },
+    { kind: "drink_mixer", icon: "🍹",  label: "Mixer" },
+    { kind: "melatonin",   icon: "🌙",  label: "Melatonin" },
+  ]},
+  { title: "Activities", kinds: [
+    { kind: "leave_house", icon: "🚪",  label: "Left house" },
+    { kind: "workout_end", icon: "🏋️",  label: "Workout end" },
+    { kind: "work_end",    icon: "💻",  label: "Work end" },
+    { kind: "social",      icon: "🥂",  label: "Social", meta: { grade: "social" } },
+    { kind: "social",      icon: "🎉",  label: "Party",  meta: { grade: "party" },
+      id: "party" },
+    { kind: "sex",         icon: "❤️",  label: "Sex" },
+  ]},
+  { title: "Symptoms", kinds: [
+    { kind: "cough",       icon: "🤧",  label: "Cough" },
+  ]},
 ];
+const KINDS = GROUPS.flatMap(g => g.kinds);
 const BY_ID = Object.fromEntries(KINDS.map(k => [k.id || k.kind, k]));
 
 // Events before this hour belong to the previous evening — the same rule
@@ -394,12 +411,14 @@ function render() {
     counts[id] = (counts[id] || 0) + 1;
   });
 
-  $("grid").innerHTML = KINDS.map(k => {
-    const id = k.id || k.kind, n = counts[id] || 0;
-    return `<button class="tile" data-id="${id}">
-      ${n ? `<span class="n">${n}</span>` : ""}
-      <span class="ico">${k.icon}</span><span>${k.label}</span></button>`;
-  }).join("");
+  $("grid").innerHTML = GROUPS.map(g => `
+    <h2 class="group">${g.title}</h2>
+    <div class="tiles">` + g.kinds.map(k => {
+      const id = k.id || k.kind, n = counts[id] || 0;
+      return `<button class="tile" data-id="${id}">
+        ${n ? `<span class="n">${n}</span>` : ""}
+        <span class="ico">${k.icon}</span><span>${k.label}</span></button>`;
+    }).join("") + `</div>`).join("");
 
   $("daylabel").textContent = new Date().toLocaleDateString(undefined,
     { weekday: "long", day: "numeric", month: "short" });
